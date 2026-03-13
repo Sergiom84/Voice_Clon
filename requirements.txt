@@ -1,0 +1,6 @@
+numpy==1.22.0
+setuptools<81
+gradio>=5,<6
+tokenizers==0.20.3
+transformers==4.46.3
+TTS==0.22.0
