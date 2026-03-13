@@ -51,6 +51,15 @@ class _FakeTTSBrokenTorchCodec:
         raise RuntimeError("Could not load libtorchcodec. Native dependency load failed.")
 
 
+class _FakeTTSCapturingArgs:
+    def __init__(self) -> None:
+        self.last_kwargs = None
+
+    def tts(self, *args, **kwargs):
+        self.last_kwargs = kwargs
+        return [0.0, 0.1, -0.1]
+
+
 class _FakeTorchArrayModule:
     float32 = np.float32
 
@@ -108,7 +117,7 @@ class BackendCompatibilityTests(unittest.TestCase):
         backend._tts = _FakeTTSMissingTorchCodec()
 
         with self.assertRaises(RuntimeError) as context:
-            backend.synthesize_fragment("Hola", "referencia.wav")
+            backend.synthesize_fragment("Hola", ["referencia.wav"])
 
         self.assertIn("python -m pip install torchcodec", str(context.exception))
 
@@ -117,9 +126,19 @@ class BackendCompatibilityTests(unittest.TestCase):
         backend._tts = _FakeTTSBrokenTorchCodec()
 
         with self.assertRaises(RuntimeError) as context:
-            backend.synthesize_fragment("Hola", "referencia.wav")
+            backend.synthesize_fragment("Hola", ["referencia.wav"])
 
         self.assertIn("FFmpeg 4-7", str(context.exception))
+
+    def test_synthesize_fragment_passes_multiple_references_to_xtts(self) -> None:
+        backend = XTTSVoiceBackend()
+        fake_tts = _FakeTTSCapturingArgs()
+        backend._tts = fake_tts
+
+        backend.synthesize_fragment("Hola", ["uno.wav", "dos.wav", "tres.wav"])
+
+        self.assertEqual(fake_tts.last_kwargs["speaker_wav"], ["uno.wav", "dos.wav", "tres.wav"])
+        self.assertEqual(fake_tts.last_kwargs["language"], "es")
 
     def test_patch_torchaudio_load_uses_soundfile_fallback_for_torchcodec_errors(self) -> None:
         fake_torchaudio = _FakeTorchAudio(

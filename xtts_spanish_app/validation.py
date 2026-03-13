@@ -44,4 +44,4 @@ def validate_spanish_text(text_es: str) -> str:
     normalized = normalize_text(text_es)
     if not normalized:
         raise ValidationError("Escribe el texto en espanol que quieres sintetizar.")
-    return normalized
+    return text_es

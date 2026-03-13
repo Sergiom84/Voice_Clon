@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from .settings import MAX_FRAGMENT_CHARS
+from .settings import MAX_FRAGMENT_CHARS, MAX_SYNTHESIS_CHARS
 
 _WHITESPACE_RE = re.compile(r"[ \t]+")
 
@@ -17,19 +17,67 @@ def normalize_text(text: str) -> str:
     return "\n".join(lines)
 
 
-def split_text_for_tts(text: str, max_fragment_chars: int = MAX_FRAGMENT_CHARS) -> list[str]:
-    normalized = normalize_text(text)
-    if not normalized:
-        return []
+def split_paragraphs_for_tts(text: str) -> list[str]:
+    normalized_newlines = text.replace("\r\n", "\n").replace("\r", "\n")
+    raw_paragraphs = re.split(r"\n\s*\n+", normalized_newlines)
+    paragraphs: list[str] = []
 
-    sentence_candidates = re.split(r"(?<=[\.\?\!…])\s+|\n+", normalized)
+    for raw_paragraph in raw_paragraphs:
+        lines = []
+        for raw_line in raw_paragraph.split("\n"):
+            cleaned_line = _WHITESPACE_RE.sub(" ", raw_line).strip()
+            if cleaned_line:
+                lines.append(cleaned_line)
+        if lines:
+            paragraphs.append(" ".join(lines))
+
+    return paragraphs
+
+
+def split_text_for_tts(text: str, max_fragment_chars: int = MAX_FRAGMENT_CHARS) -> list[str]:
+    fragments: list[str] = []
+    for paragraph in split_paragraphs_for_tts(text):
+        fragments.extend(_split_paragraph_into_fragments(paragraph, max_fragment_chars))
+    return fragments
+
+
+def build_synthesis_chunks(
+    text: str,
+    max_chunk_chars: int = MAX_SYNTHESIS_CHARS,
+    max_fragment_chars: int = MAX_FRAGMENT_CHARS,
+) -> list[str]:
+    chunks: list[str] = []
+
+    for paragraph in split_paragraphs_for_tts(text):
+        paragraph_fragments = _split_paragraph_into_fragments(paragraph, max_fragment_chars)
+        if not paragraph_fragments:
+            continue
+
+        current_chunk = ""
+        for fragment in paragraph_fragments:
+            prospective = fragment if not current_chunk else f"{current_chunk} {fragment}"
+            if len(prospective) <= max_chunk_chars:
+                current_chunk = prospective
+                continue
+
+            if current_chunk:
+                chunks.append(current_chunk)
+            current_chunk = fragment
+
+        if current_chunk:
+            chunks.append(current_chunk)
+
+    return chunks
+
+
+def _split_paragraph_into_fragments(paragraph: str, max_fragment_chars: int) -> list[str]:
+    sentence_candidates = re.split(r"(?<=[\.\?\!…])\s+", paragraph)
     fragments: list[str] = []
     for candidate in sentence_candidates:
         stripped = candidate.strip()
         if not stripped:
             continue
         fragments.extend(_split_overlong_sentence(stripped, max_fragment_chars))
-
     return fragments
 
 

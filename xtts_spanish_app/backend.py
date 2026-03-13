@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 import os
 
-from .settings import DEFAULT_OUTPUT_SAMPLE_RATE, DEFAULT_XTTS_MODEL
+from .settings import DEFAULT_OUTPUT_SAMPLE_RATE, DEFAULT_XTTS_MODEL, DEFAULT_SYNTHESIS_SEED
 
 
 class VoiceBackend(ABC):
@@ -14,7 +14,12 @@ class VoiceBackend(ABC):
         """Carga el modelo una sola vez."""
 
     @abstractmethod
-    def synthesize_fragment(self, text: str, reference_audio_path: str) -> list[float]:
+    def synthesize_fragment(
+        self,
+        text: str,
+        reference_audio_paths: list[str],
+        seed: int | None = None,
+    ) -> list[float]:
         """Genera un fragmento de audio mono."""
 
     @abstractmethod
@@ -23,11 +28,12 @@ class VoiceBackend(ABC):
 
 
 class XTTSVoiceBackend(VoiceBackend):
-    def __init__(self, model_name: str = DEFAULT_XTTS_MODEL) -> None:
+    def __init__(self, model_name: str = DEFAULT_XTTS_MODEL, seed: int = DEFAULT_SYNTHESIS_SEED) -> None:
         self.model_name = model_name
         self._tts = None
         self._device = "cpu"
         self._last_warning = None
+        self._seed = seed
 
     def load_model(self) -> None:
         if self._tts is not None:
@@ -84,10 +90,21 @@ class XTTSVoiceBackend(VoiceBackend):
                     f"No se pudo cargar XTTS-v2 ({self.model_name}) en CPU. Error: {exc}"
                 ) from exc
 
-    def synthesize_fragment(self, text: str, reference_audio_path: str) -> list[float]:
+    def synthesize_fragment(
+        self,
+        text: str,
+        reference_audio_paths: list[str],
+        seed: int | None = None,
+    ) -> list[float]:
         self.load_model()
+        effective_seed = seed if seed is not None else self._seed
+        self._set_seed(effective_seed)
         try:
-            audio = self._tts.tts(text=text, speaker_wav=reference_audio_path, language="es")
+            audio = self._tts.tts(
+                text=text,
+                speaker_wav=reference_audio_paths,
+                language="es",
+            )
         except ImportError as exc:
             message = str(exc)
             if "TorchCodec is required for load_with_torchcodec" in message or "No module named 'torchcodec'" in message:
@@ -109,6 +126,18 @@ class XTTSVoiceBackend(VoiceBackend):
         if hasattr(audio, "tolist"):
             audio = audio.tolist()
         return [float(sample) for sample in audio]
+
+    def _set_seed(self, seed: int) -> None:
+        """Configura la semilla para reproducibilidad en torch y random."""
+        import random
+
+        import torch
+
+        random.seed(seed)
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
 
     def describe_runtime(self) -> str:
         status = "modelo cargado" if self._tts is not None else "modelo pendiente de carga"

@@ -22,29 +22,55 @@ def build_app(service: SpanishVoiceService, startup_error: str | None = None) ->
         )
     )
 
-    def generate_audio(reference_audio_path: str | None, text_es: str) -> tuple[str | None, str | None, str]:
+    def generate_audio(
+        reference_audio_path: str | None,
+        text_es: str,
+        progress=gr.Progress(track_tqdm=False),
+    ) -> tuple[str | None, str | None, str]:
+        latest_status = "Preparando referencia..."
+
+        def update_progress(status: str, step: int, total_steps: int) -> None:
+            nonlocal latest_status
+            latest_status = status
+            progress(step / max(total_steps, 1), desc=status)
+
         try:
-            output_path = service.synthesize_spanish(reference_audio_path=reference_audio_path, text_es=text_es)
+            result = service.synthesize_spanish(
+                reference_audio_path=reference_audio_path,
+                text_es=text_es,
+                progress_callback=update_progress,
+            )
             runtime_status = service.describe_runtime()
-            status_message = f"Audio generado correctamente. Runtime: {runtime_status}."
-            operation_note = service.get_last_operation_note()
+            progress(1.0, desc="Listo.")
+            status_message = (
+                f"Audio generado correctamente. Runtime: {runtime_status}. "
+                f"Bloques: {result.segment_count}. Job: {result.job_dir}."
+            )
+            operation_note = result.operation_note
             if operation_note:
                 status_message = f"{status_message} {operation_note}"
-            return output_path, output_path, status_message
+
+            if result.resynthesized_count > 0:
+                status_message = f"{status_message} Re-sintetizados: {result.resynthesized_count}."
+
+            if result.quality_issues:
+                issues_summary = "; ".join(result.quality_issues[:5])
+                if len(result.quality_issues) > 5:
+                    issues_summary += f" ... y {len(result.quality_issues) - 5} más"
+                status_message = f"{status_message} Avisos de calidad: {issues_summary}"
+
+            return result.final_audio_path, result.final_audio_path, status_message
         except ValidationError as exc:
             return None, None, str(exc)
         except Exception as exc:  # pragma: no cover - depende del entorno/modelo
-            return None, None, f"Error de sintesis: {exc}"
-
-    def mark_generation_started() -> str:
-        return "Generando audio..."
+            return None, None, f"{latest_status} Error de sintesis: {exc}"
 
     with gr.Blocks(title="XTTS Spanish App", analytics_enabled=False) as app:
         gr.Markdown("# XTTS Spanish App")
         gr.Markdown(
             "Clonado de voz en espanol con XTTS-v2. "
             "Sube un WAV o MP3 limpio y escribe el texto que quieres sintetizar. "
-            "Si el audio es largo, la app recorta automaticamente un tramo util para clonar la voz."
+            "Si el audio es largo, la app prepara automaticamente varias referencias utiles para clonar la voz."
         )
         status_box = gr.Markdown(startup_message)
 
@@ -71,13 +97,10 @@ def build_app(service: SpanishVoiceService, startup_error: str | None = None) ->
         generated_file = gr.File(label="Descargar WAV", interactive=False)
 
         generate_button.click(
-            fn=mark_generation_started,
-            outputs=[status_box],
-            queue=False,
-        ).then(
             fn=generate_audio,
             inputs=[reference_audio, text_es],
             outputs=[generated_audio, generated_file, status_box],
+            queue=True,
         )
 
     return app
