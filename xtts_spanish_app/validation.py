@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 import soundfile as sf
 
-from .settings import MAX_REFERENCE_SECONDS, MIN_REFERENCE_SECONDS
+from .settings import (
+    FIDELITY_MODE_OPTIONS,
+    FIDELITY_MODE_MAXIMUM,
+    MIN_REFERENCE_SECONDS,
+    REFERENCE_PROFILE_AUTO,
+    REFERENCE_PROFILE_OPTIONS,
+)
 from .text_processing import normalize_text
 
 
@@ -45,3 +52,30 @@ def validate_spanish_text(text_es: str) -> str:
     if not normalized:
         raise ValidationError("Escribe el texto en espanol que quieres sintetizar.")
     return text_es
+
+
+def validate_reference_profile(reference_profile: str | None) -> str:
+    profile = (reference_profile or REFERENCE_PROFILE_AUTO).strip().lower()
+    if profile not in REFERENCE_PROFILE_OPTIONS:
+        valid = ", ".join(REFERENCE_PROFILE_OPTIONS)
+        raise ValidationError(f"Perfil de referencia inválido. Usa: {valid}.")
+    return profile
+
+
+def validate_fidelity_mode(fidelity_mode: str | None) -> str:
+    mode = (fidelity_mode or FIDELITY_MODE_MAXIMUM).strip().lower()
+    if mode not in FIDELITY_MODE_OPTIONS:
+        valid = ", ".join(FIDELITY_MODE_OPTIONS)
+        raise ValidationError(f"Modo de fidelidad inválido. Usa: {valid}.")
+    return mode
+
+
+def normalize_profile_name(profile_name: str | None) -> str | None:
+    if not profile_name:
+        return None
+    cleaned = profile_name.strip().lower()
+    if not cleaned:
+        return None
+    cleaned = re.sub(r"[^a-z0-9_-]+", "_", cleaned)
+    cleaned = re.sub(r"_+", "_", cleaned).strip("_")
+    return cleaned or None

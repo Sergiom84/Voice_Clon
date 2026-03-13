@@ -7,7 +7,14 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from xtts_spanish_app.validation import ValidationError, validate_reference_wav, validate_spanish_text
+from xtts_spanish_app.validation import (
+    ValidationError,
+    normalize_profile_name,
+    validate_fidelity_mode,
+    validate_reference_profile,
+    validate_reference_wav,
+    validate_spanish_text,
+)
 
 
 def _create_wav(path: Path, duration_seconds: float, sample_rate: int = 24_000) -> None:
@@ -56,6 +63,23 @@ class ValidationTests(unittest.TestCase):
                 duration = validate_reference_wav(str(mp3_path))
 
             self.assertAlmostEqual(duration, 4.0, places=2)
+
+    def test_validate_reference_profile_accepts_supported_values(self) -> None:
+        self.assertEqual(validate_reference_profile("auto"), "auto")
+        self.assertEqual(validate_reference_profile("short"), "short")
+        self.assertEqual(validate_reference_profile("long"), "long")
+
+    def test_validate_fidelity_mode_accepts_supported_values(self) -> None:
+        self.assertEqual(validate_fidelity_mode("normal"), "normal")
+        self.assertEqual(validate_fidelity_mode("maxima"), "maxima")
+
+    def test_validate_reference_profile_rejects_invalid_value(self) -> None:
+        with self.assertRaises(ValidationError):
+            validate_reference_profile("desconocido")
+
+    def test_normalize_profile_name(self) -> None:
+        self.assertEqual(normalize_profile_name(" Voz Principal 01 "), "voz_principal_01")
+        self.assertIsNone(normalize_profile_name("   "))
 
 
 if __name__ == "__main__":
